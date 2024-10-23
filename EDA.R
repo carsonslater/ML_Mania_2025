@@ -234,7 +234,7 @@ model_data <-
   set_names(c("Test","Train")) |>
   map(~select(.,-`Season < 2015`))
 
-bar<- function(x)sum/length(x)
+
 
 
 
