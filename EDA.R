@@ -148,23 +148,28 @@ quad_win_helper <-
       rename_with(.fn = ~str_replace(string = .,pattern = "L",replacement = "A"), .cols = starts_with("L")) |>
       mutate(win = 0, win_by = BScore - AScore) |> 
       select(Season, DayNum, ATeamID, AScore, BTeamID, BScore, win, win_by) 
-  )  |> 
-  left_join(ranking_data |> select(TeamID, Season,rank_avg_B = rank_avg), by = c("Season", "BTeamID" = "TeamID")) |> 
-  mutate(game_of_interest_A = rank_avg_B < 30, game_of_interest_A_bad = rank_avg_B > 75) 
+  )  
+# |> 
+  # left_join(ranking_data |> select(TeamID, Season,rank_avg_B = rank_avg), by = c("Season", "BTeamID" = "TeamID")) |> 
+  # mutate(game_of_interest_A = rank_avg_B < 30, game_of_interest_A_bad = rank_avg_B > 75) 
 
 
 quad_win_tracker <-
   quad_win_helper |> 
-  count(Season, ATeamID, win, game_of_interest_A) |> 
-  filter(!is.na(game_of_interest_A)) |> 
-  filter(game_of_interest_A) |> 
+  count(Season, ATeamID, win, 
+        # game_of_interest_A
+        ) |> 
+  # filter(!is.na(game_of_interest_A)) |> 
+  # filter(game_of_interest_A) |> 
   filter(win == 1) |> 
   select(Season, TeamID = ATeamID, quad_wins = n) |> 
   full_join(
     quad_win_helper |> 
-      count(Season, BTeamID, win, game_of_interest_A_bad) |> 
-      filter(!is.na(game_of_interest_A_bad)) |> 
-      filter(game_of_interest_A_bad) |> 
+      count(Season, BTeamID, win, 
+            # game_of_interest_A_bad
+            ) |> 
+      # filter(!is.na(game_of_interest_A_bad)) |> 
+      # filter(game_of_interest_A_bad) |> 
       filter(win == 0) |> 
       select(Season, TeamID = BTeamID, quad_loss = n)
   ) |> 
@@ -212,8 +217,9 @@ base_builder <-
 
 
 staging_data <-
-  ranking_data |> 
-  left_join(summary_stats, by = c("Season","TeamID")) |> 
+  # ranking_data |> 
+  # left_join(summary_stats, by = c("Season","TeamID")) |> 
+  summary_stats |> 
   distinct() |> 
   left_join(quality_win_tracker) |> 
   left_join(
@@ -239,10 +245,12 @@ model_data <-
   left_join(seeds, by = c("LTeamID" = "TeamID", "Season"), suffix = c("_A", "_B")) |>
   left_join(quad_win_tracker, by = c("WTeamID" = "TeamID", "Season")) |> 
   left_join(quad_win_tracker, by = c("LTeamID" = "TeamID", "Season"), suffix = c("_A", "_B")) |> 
+  mutate(win = factor(win, levels = c("lose", "win"))) |>  # Added this line
   group_split(Season < 2015) |>
   set_names(c("Test","Train")) |>
   map(~select(.,-`Season < 2015`))
 
+write_rds(model_data, "Data/model_data.rds") # Added this too
 
 
 
