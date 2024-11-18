@@ -9,8 +9,8 @@ model_data_1_tibble <- bind_rows(model_data$Train, model_data$Test)
 
 set.seed(77)
 data_split <- initial_split(model_data_1_tibble, prop = 0.75, strata = win)
-test_data <- model_data$Test
-train_data <- model_data$Train
+test_data <- testing(data_split)
+train_data <- training(data_split)
 
 # Create a cross-validation folds
 cv_folds <- vfold_cv(train_data, v = 10, strata = win)
@@ -24,7 +24,9 @@ ctrl_bayes <- control_bayes(verbose_iter = TRUE)
 
 # Create a recipe
 glmnet_rec <- recipe(win ~ good_wins_A + good_wins_B + bad_loss_A + bad_loss_B +
-                   POM_A + POM_B + quad_wins_A + quad_wins_B + Seed_A + Seed_B, 
+                   POM_A + POM_B + quad_wins_A + quad_wins_B + Seed_A + Seed_B + 
+                     MOR_A + MOR_B + SAG_A + SAG_B + WLK_A + 
+                     WLK_B, 
                  data = train_data)
 
 # Create Model Specification
