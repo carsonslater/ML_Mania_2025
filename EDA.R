@@ -197,8 +197,6 @@ conf_rank <-
   mutate(conf_record = str_c(WConf, "_", LConf)) |> 
   select(Season, conf_record, contains("conf_"))
 
-
-
 base_builder <-
   read_csv(here::here("Data/MNCAATourneyDetailedResults.csv")) |>
   select(Season,contains("Team"), contains("Score"), DayNum) |>
@@ -253,5 +251,33 @@ model_data <-
 write_rds(model_data, "Data/model_data.rds") # Added this too
 
 
+# Added the following code to produce the team summary stats and possible 
+# matchups for the 2024 tournament
+
+team_data_2024 <- seeds |> 
+  filter(Season == 2024) |> 
+  left_join(staging_data, by = c("TeamID", "Season")) |> 
+  left_join(rankings, by = c("TeamID", "Season")) |> 
+  left_join(quad_win_tracker, by = c("TeamID", "Season"))
+
+team_matchups_2024 <- expand_grid(
+  TeamID_A = team_data_2024$TeamID,
+  TeamID_B = team_data_2024$TeamID
+) |> 
+  left_join(team_data_2024, by = c("TeamID_A" = "TeamID")) |> 
+  select(-Season) |> 
+  left_join(team_data_2024, by = c("TeamID_B" = "TeamID"), suffix = c("_A", "_B")) |> 
+  filter(TeamID_A != TeamID_B) |>
+  mutate(conf_record_one = str_c(conf_A, "_", conf_B),
+         conf_record_two = str_c(conf_B, "_", conf_A)) |>
+  left_join(conf_rank, by = c("Season", "conf_record_one" = "conf_record")) |>
+  left_join(conf_rank, by = c("Season", "conf_record_two" = "conf_record"), suffix = c("_against_B", "_against_A")) |>
+  select(-c(conf_record_one,conf_record_two,conf_A,conf_B)) |>
+  mutate(across(.cols = contains("conf_"),.fns = ~replace_na(.,0))) |> 
+  left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_A" = "TeamID")) |>
+  select(-Tournament) |> 
+  left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_B" = "TeamID"), suffix = c("_A", "_B"))
+  
+team_matchups_2024 |> write_rds("Data/team_matchups_2024.rds")
 
 

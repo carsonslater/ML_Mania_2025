@@ -92,3 +92,11 @@ glmnet_final_res |>
 glmnet_final_res |> 
   collect_predictions() |> 
   conf_mat(truth = win, estimate = .pred_class)
+
+# Save the final workflow
+library(butcher)
+cleaned_glmnet_final_res <- glmnet_final_wflow |> 
+  fit(data = train_data) |> 
+  butcher()
+
+write_rds(cleaned_glmnet_final_res, "glmnet_final_res.rds")
