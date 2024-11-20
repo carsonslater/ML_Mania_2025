@@ -43,6 +43,9 @@ rankings <-
   slice_max(RankingDayNum, n = 1) |> 
   ungroup()
 
+ranking %>% 
+  ggplot(aes(x = RPI, y = WLK))+geom_point(alpha = 0.3)+geom_function(fun = \(y))
+
 summary_stats <-
   read_csv(here::here("Data/MRegularSeasonDetailedResults.csv")) |> 
   rename_with(.fn = ~str_replace(string = .,pattern = "W",replacement = "A"), .cols = starts_with("W")) |> 
