@@ -24,7 +24,7 @@ ctrl_bayes <- control_bayes(verbose_iter = TRUE)
 
 # Create a recipe
 glmnet_rec <- recipe(win ~ good_wins_A + good_wins_B + POM_A + POM_B + 
-                       TO_A + TO_B, 
+                       off_rating_A + off_rating_B + def_rating_A + def_rating_B, 
                  data = train_data)
 
 # Create Model Specification

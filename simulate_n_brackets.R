@@ -13,8 +13,8 @@ make_round_matchups <- function(team_locations){
 make_round_preds <- function(round_matchups, all_preds){
   round_matchups |> 
     left_join(all_preds, by = c("team_A", "team_B")) |> 
-    mutate(loc = ifelse(win_probA > 0.5, loc_A, loc_B),
-           team_id = ifelse(win_probA > 0.5, team_A, team_B)) |> 
+    mutate(loc = ifelse(runif(1) < win_probA, loc_A, loc_B),
+           team_id = ifelse(loc == loc_A, team_A, team_B)) |> 
     select(loc, team_id)
 }
 
