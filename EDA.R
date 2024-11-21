@@ -52,6 +52,8 @@ rankings |>
   theme_minimal()
 
 
+# Creates summary stats for the season. I added variables for possessions per 
+# game, offensive efficiency, and defensive efficiency.
 summary_stats <-
   read_csv(here::here("Data/MRegularSeasonDetailedResults.csv")) |> 
   rename_with(.fn = ~str_replace(string = .,pattern = "W",replacement = "A"), .cols = starts_with("W")) |> 
@@ -78,7 +80,10 @@ summary_stats <-
   pivot_wider(names_from = name, values_from = summary_val) |> 
   ungroup() |> 
   rename(avg_win = `in`, avg_win_by = `in_by`) |> 
-  relocate(c(avg_win,avg_win_by), .after = last_col())
+  relocate(c(avg_win,avg_win_by), .after = last_col()) |> 
+  mutate(poss = FGA + TO - OR + .44 * FTA,
+    off_rating = Score / poss * 100,
+    def_rating = (Score - avg_win_by) / poss * 100)
 
 summary_stats_final <-
   read_csv(here::here("Data/MNCAATourneyDetailedResults.csv")) |> 
