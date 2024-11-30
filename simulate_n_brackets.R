@@ -10,15 +10,23 @@ make_round_matchups <- function(team_locations){
     rename(loc_B = loc, team_B = team_id)
 }
 
-make_round_preds <- function(round_matchups, all_preds){
+make_round_preds <- function(round_matchups, all_preds, chalk){
+  if(!chalk){
   round_matchups |> 
     left_join(all_preds, by = c("team_A", "team_B")) |> 
     mutate(loc = ifelse(runif(1) < win_probA, loc_A, loc_B),
            team_id = ifelse(loc == loc_A, team_A, team_B)) |> 
     select(loc, team_id)
+  } else {
+    round_matchups |> 
+      left_join(all_preds, by = c("team_A", "team_B")) |> 
+      mutate(loc = ifelse(win_probA > 0.5, loc_A, loc_B),
+             team_id = ifelse(loc == loc_A, team_A, team_B)) |>
+      select(loc, team_id)
+  }
 }
 
-simulate_bracket <- function(team_locations, all_preds){
+simulate_bracket <- function(team_locations, all_preds, chalk){
   slots <- c("R1W1", "R1W8", "R1W5", "R1W4", "R1W6", "R1W3", "R1W7", "R1W2",
              "R1X1", "R1X8", "R1X5", "R1X4", "R1X6", "R1X3", "R1X7", "R1X2",
              "R1Y1", "R1Y8", "R1Y5", "R1Y4", "R1Y6", "R1Y3", "R1Y7", "R1Y2",
@@ -30,7 +38,7 @@ simulate_bracket <- function(team_locations, all_preds){
   results <- vector("list", 6)
   for(i in 1:6){
     round_matchups <- make_round_matchups(team_locations)
-    team_locations <- make_round_preds(round_matchups, all_preds)
+    team_locations <- make_round_preds(round_matchups, all_preds, chalk)
     results[[i]] <- team_locations |> select(Team = loc)
   }
   bracket <- tibble(Slot = slots,
@@ -38,8 +46,8 @@ simulate_bracket <- function(team_locations, all_preds){
                     )
 }
 
-simulate_n_brackets <- function(team_locations, all_preds, n, bracket_type = "M"){
-  all_brackets <- map(1:n, ~simulate_bracket(team_locations, all_preds), .progress = T)
+simulate_n_brackets <- function(team_locations, all_preds, n, bracket_type = "M", chalk = F){
+  all_brackets <- map(1:n, ~simulate_bracket(team_locations, all_preds, chalk), .progress = T)
   bind_rows(all_brackets) |> 
     mutate(RowID = row_number(),
            Tournament = bracket_type,

@@ -281,7 +281,8 @@ team_matchups_2024 <- expand_grid(
   mutate(across(.cols = contains("conf_"),.fns = ~replace_na(.,0))) |> 
   left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_A" = "TeamID")) |>
   select(-Tournament) |> 
-  left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_B" = "TeamID"), suffix = c("_A", "_B"))
+  left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_B" = "TeamID"), suffix = c("_A", "_B")) |> 
+  filter(!is.na(Seed_A_A) & !is.na(Seed_B_B))
   
 team_matchups_2024 |> write_rds("Data/team_matchups_2024.rds")
 

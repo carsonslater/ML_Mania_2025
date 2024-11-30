@@ -20,7 +20,7 @@ ctrl <- control_resamples(save_pred = TRUE)
 ctrl_bayes <- control_bayes(verbose_iter = TRUE)
 
 # Create a recipe
-xgb_rec <- recipe(target ~ diff_seed + diff_rating + 
+xgb_rec <- recipe(target ~ Seed_A + Seed_B + diff_rating + 
                     WLoc + diff_win_rate + diff_gap_avg,
                   data = train_data) |> 
   step_dummy(all_nominal_predictors())
@@ -61,6 +61,7 @@ xgb_bayes_res <-
   tune_bayes(
     resamples = cv_folds,
     initial = xgb_init_res,
+    iter = 20,
     param_info = xgb_params,
     metrics = metrics,
     control = ctrl_bayes
@@ -87,3 +88,11 @@ final_xgb_res |> collect_metrics()
 
 final_xgb_res |> collect_predictions() |> 
   conf_mat(truth = target, estimate = .pred_class)
+
+# Save the model
+library(butcher)
+cleaned_model <- xgb_final_wf |> 
+  fit(train_data) |>
+  butcher()
+
+write_rds(cleaned_model, "xgb_final_res_womens.rds")

@@ -1,27 +1,22 @@
 # This predicts each game for 2024 using the glmnet model. 
-# Later I will simulate brackets using this as well.
+# The main target is to see how badly we would have done last year
 
 # Load the model
 glmnet_model <- read_rds("glmnet_final_res.rds")
+xgb_model_w <- read_rds("xgb_final_res_womens.rds")
 
 # Load the data
 data_2024 <- read_rds("Data/team_matchups_2024.rds")
+data_2024_w <- read_rds("Data/team_matchups_2024_w.rds")
 
 # Predict the games
 glmnet_preds <- augment(glmnet_model, new_data = data_2024)
-
-# Cut out the teams that lost the playins
-playin_out <- read_csv("Data/MTeams.csv") |> 
-  filter(TeamName %in% c("Howard", "Virginia", "Montana St", "Boise St")) |> 
-  pull(TeamID)
-
-glmnet_preds_filtered <- glmnet_preds |>
-  filter(!(TeamID_A %in% playin_out) & !(TeamID_B %in% playin_out))
+xgb_preds_w <- augment(xgb_model_w, new_data = data_2024_w)
 
 # This function will make a dataframe of the team locations and 
 # a dataframe of the predictions when taking a dataframe consisting
 # of all predictions for 64 team tournament
-make_team_locs_preds <- function(df){
+make_team_locs_preds <- function(df, mens = T){
   team_locs <- df |>
     select(team_id = TeamID_A, loc = Seed_A_A) |> 
     distinct() |> 
@@ -38,20 +33,29 @@ make_team_locs_preds <- function(df){
     arrange(loc) |> 
     mutate(loc = as.character(loc))
   
+  if (mens){
   preds <- df |>
     select(team_A = TeamID_A, team_B = TeamID_B, win_probA = .pred_win)
-  
+  }else{
+    preds <- df |>
+    select(team_A = TeamID_A, team_B = TeamID_B, win_probA = .pred_W)
+  }
   return(list(team_locs, preds))
 }
 
 # Make the team locations and predictions
-team_locs_preds <- make_team_locs_preds(glmnet_preds_filtered)
+team_locs_preds <- make_team_locs_preds(glmnet_preds)
+team_locs_preds_w <- make_team_locs_preds(xgb_preds_w, mens = F)
 
 # Use simulate_n_brackets from simulate_n_brackets.R to simulate 1000
 # brackets using the glmnet predictions
-brackets <- simulate_n_brackets(team_locs_preds[[1]], team_locs_preds[[2]], 50)
+brackets <- simulate_n_brackets(team_locs_preds[[1]], team_locs_preds[[2]], 1000)
+chalk <- simulate_n_brackets(team_locs_preds[[1]], team_locs_preds[[2]], 1, chalk = T)
 
-
+brackets_w <- simulate_n_brackets(team_locs_preds_w[[1]], team_locs_preds_w[[2]], 1000, 
+                                  bracket_type = "W")
+chalk_w <- simulate_n_brackets(team_locs_preds_w[[1]], team_locs_preds_w[[2]], 1, chalk = T,
+                               bracket_type = "W")
 # Evaluation Function
 # This shows the way that the brackets are evaluated.
 # The probability that each team makes it to each round is calculated
@@ -70,55 +74,68 @@ true_bracket <- tibble(true_winner = c("W01", "W09", "W05", "W13", "W11", "W03",
          "X01", "X09", "X12", "X04", "X06", "X03", "X07", "X02", 
          "Y01", "Y09", "Y05", "Y12", "Y11", "Y14", "Y10", "Y02", 
          "Z01", "Z08", "Z05", "Z04", "Z11", "Z03", "Z07", "Z02", 
-         "W01", "W05", "W03", "W02",
-         "X01", "X04", "X06", "X02",
-         "Y01", "Y04", "Y11", "Y02",
-         "Z01", "Z05", "Z03", "Z02",
-         "W01", "W03",
-         "X04", "X06",
-         "Y04", "Y11",
-         "Z01", "Z02",
-         "W01",
-         "X04",
-         "Y11",
-         "Z01",
-         "W01",
-         "Z01",
-         "W01"),
-         slot = c("R1W1", "R1W8", "R1W5", "R1W4", "R1W6", "R1W3", "R1W7", "R1W2",
+         "W01", "W05", "W03", "W02","X01", "X04", "X06", "X02",
+         "Y01", "Y04", "Y11", "Y02","Z01", "Z05", "Z03", "Z02",
+         "W01", "W03","X04", "X06","Y04", "Y11","Z01", "Z02",
+         "W01","X04","Y11","Z01","W01","Z01","W01", 
+         
+         "W01", "W08", "W05", "W04", "W06", "W03", "W07", "W02",
+         "X01", "X08", "X05", "X04", "X06", "X03", "X07", "X02",
+         "Y01", "Y08", "Y05", "Y04", "Y11", "Y03", "Y07", "Y02",
+         "Z01", "Z08", "Z05", "Z04", "Z06", "Z03", "Z07", "Z02",
+         "W01", "W04", "W03", "W02", "X01", "X04", "X03", "X02",
+         "Y01", "Y05", "Y03", "Y02", "Z01", "Z05", "Z03", "Z07",
+         "W01", "W03", "X01", "X03", "Y01", "Y03", "Z01", "Z03",
+         "W01", "X03", "Y01", "Z03", "W01", "Y01", "W01"),
+         Slot = rep(c("R1W1", "R1W8", "R1W5", "R1W4", "R1W6", "R1W3", "R1W7", "R1W2",
                   "R1X1", "R1X8", "R1X5", "R1X4", "R1X6", "R1X3", "R1X7", "R1X2",
                   "R1Y1", "R1Y8", "R1Y5", "R1Y4", "R1Y6", "R1Y3", "R1Y7", "R1Y2",
                   "R1Z1", "R1Z8", "R1Z5", "R1Z4", "R1Z6", "R1Z3", "R1Z7", "R1Z2",
                   "R2W1", "R2W4", "R2W3", "R2W2", "R2X1", "R2X4", "R2X3", "R2X2",
                   "R2Y1", "R2Y4", "R2Y3", "R2Y2", "R2Z1", "R2Z4", "R2Z3", "R2Z2",
                   "R3W1", "R3W2","R3X1", "R3X2","R3Y1", "R3Y2","R3Z1", "R3Z2",
-                  "R4W1","R4X1", "R4Y1","R4Z1","R5WX", "R5YZ","R6CH"))
+                  "R4W1","R4X1", "R4Y1","R4Z1","R5WX", "R5YZ","R6CH"), 2),
+         Tournament = rep(c("M", "W"), each = 63))
+
+# true_bracket_w <- tibble(true_winner = c("W01", "W08", "W05", "W04", "W06", "W03", "W07", "W02",
+#                                          "X01", "X08", "X05", "X04", "X06", "X03", "X07", "X02",
+#                                          "Y01", "Y08", "Y05", "Y04", "Y11", "Y03", "Y07", "Y02",
+#                                          "Z01", "Z08", "Z05", "Z04", "Z06", "Z03", "Z07", "Z02",
+#                                          "W01", "W04", "W03", "W02", "X01", "X04", "X03", "X02",
+#                                          "Y01", "Y05", "Y03", "Y02", "Z01", "Z05", "Z03", "Z07",
+#                                          "W01", "W03", "X01", "X03", "Y01", "Y03", "Z01", "Z03",
+#                                          "W01", "X03", "Y01", "Z03", "W01", "Y01", "W01"),
+#                          slot = c("R1W1", "R1W8", "R1W5", "R1W4", "R1W6", "R1W3", "R1W7", "R1W2",
+#                                   "R1X1", "R1X8", "R1X5", "R1X4", "R1X6", "R1X3", "R1X7", "R1X2",
+#                                   "R1Y1", "R1Y8", "R1Y5", "R1Y4", "R1Y6", "R1Y3", "R1Y7", "R1Y2",
+#                                   "R1Z1", "R1Z8", "R1Z5", "R1Z4", "R1Z6", "R1Z3", "R1Z7", "R1Z2",
+#                                   "R2W1", "R2W4", "R2W3", "R2W2", "R2X1", "R2X4", "R2X3", "R2X2",
+#                                   "R2Y1", "R2Y4", "R2Y3", "R2Y2", "R2Z1", "R2Z4", "R2Z3", "R2Z2",
+#                                   "R3W1", "R3W2","R3X1", "R3X2","R3Y1", "R3Y2","R3Z1", "R3Z2",
+#                                   "R4W1","R4X1", "R4Y1","R4Z1","R5WX", "R5YZ","R6CH"))
+#                          
+
+all_brackets <- bind_rows(brackets, brackets_w)
+all_chalk <- bind_rows(chalk, chalk_w)
 
 
-teams <- tibble(loc = rep(c("W", "X", "Y", "Z"), each = 16), 
-                         num = rep(c(1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15), 4)) |> 
-  mutate(loc = paste0(loc, num)) |> 
-  pull(loc)
+calculate_brier_score <- function(brackets){
+  brackets |> 
+    group_by(Tournament, Slot) |>
+    count(Team) |>
+    mutate(prob = n / sum(n)) |>
+    full_join(true_bracket, by = c("Slot", "Tournament")) |> 
+    filter(Team == true_winner) |> 
+    right_join(true_bracket, by = c("Slot", "Tournament")) |> 
+    mutate(prob = ifelse(is.na(prob), 0, prob),
+           brier = (prob - 1)^2, 
+           round = str_extract(Slot, "\\d")) |> 
+    group_by(round, Tournament) |> 
+    summarize(brier = mean(brier)) |> 
+    group_by(Tournament) |>
+    summarize(brier = mean(brier)) |> 
+    pull(brier)
+}
 
-
-pred_spots <- brackets |> 
-  group_by(Tournament, Slot) |> 
-  count(Team) |> 
-  pivot_wider(names_from = Team, values_from = n, values_fill = 0) |> 
-  mutate(across(everything(), ~ .x / sum(across(everything())))) |> 
-  left_join(true_bracket, by = c("Slot" = "slot")) |> 
-  mutate(brier_class)
-
-pred_spots1 <- brackets |> 
-  group_by(Tournament, Slot) |>
-  count(Team) |>
-  mutate(prob = n / sum(n)) |>
-  full_join(true_bracket, by = c("Slot" = "slot")) |> 
-  filter(Team == true_winner) |> 
-  right_join(true_bracket, by = c("Slot" = "slot")) |> 
-  mutate(prob = ifelse(is.na(prob), 0, prob),
-         brier = (prob - 1)^2, 
-         round = str_extract(Slot, "\\d")) |> 
-  group_by(round) |> 
-  summarize(brier = mean(brier)) |> 
-  summarize(brier = mean(brier))
+calculate_brier_score(all_brackets)
+calculate_brier_score(all_chalk)

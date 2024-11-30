@@ -174,4 +174,27 @@ result_merged <- bind_rows(tmp, tmp2) %>%
 
 result_merged %>% write_csv("train_womens.csv")
 
-glimpse(result_merged)
+# Save a dataset that contains the women's 
+# 2024 data to use for comparing model accuracy last 
+# year.
+womens_teams_2024 <- features_A |> filter(Season == 2024) |> 
+  rename_with(~ gsub("_A$", "", .), ends_with("_A"))
+womens_team_matchups_2024 <- expand_grid(TeamID_A = womens_teams_2024$TeamID,
+                                         TeamID_B = womens_teams_2024$TeamID) |>
+  filter(TeamID_A != TeamID_B) |> 
+  left_join(womens_teams_2024, by = c("TeamID_A" = "TeamID")) |>
+  select(-Season) |> 
+  left_join(womens_teams_2024, by = c("TeamID_B"= "TeamID"), suffix = c("_A", "_B")) |>
+  mutate(diff_seed = Seed_A - Seed_B,
+         diff_rating = Rating_A - Rating_B,
+         diff_win_rate = win_rate_A - win_rate_B,
+         diff_gap_avg = gap_avg_A - gap_avg_B,
+         WLoc = case_when(Seed_A == 1 & Seed_B %in% c("8", "9", "16") ~ "H",
+                          Seed_B == 1 & Seed_A %in% c("8", "9", "16") ~ "A", 
+                          T ~ "N")) |> 
+  left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_A" = "TeamID")) |>
+  select(-Tournament) |> 
+  left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_B" = "TeamID"), suffix = c("_A", "_B")) |> 
+  filter(!is.na(Seed_A_A), !is.na(Seed_B_B))  
+
+write_rds(womens_team_matchups_2024, "Data/team_matchups_2024_w.rds") 
