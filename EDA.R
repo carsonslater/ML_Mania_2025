@@ -43,9 +43,19 @@ rankings <-
   slice_max(RankingDayNum, n = 1) |> 
   ungroup()
 
-ranking %>% 
-  ggplot(aes(x = RPI, y = WLK))+geom_point(alpha = 0.3)+geom_function(fun = \(y))
+# Creating a Visualization --
+-------------------------------------------------
 
+rankings |>
+  ggplot(aes(x = RPI, y = WLK)) +
+  geom_point(alpha = 0.05) +
+  geom_function(fun = \(y) y, color = "aquamarine4") +
+  theme_minimal()
+
+
+# Creates summary stats for the season. I added variables for possessions per 
+# game, offensive efficiency, and defensive efficiency.
+>>>>>>> 4ef6f04599907fd3947457e3c1d88df112501e53
 summary_stats <-
   read_csv(here::here("Data/MRegularSeasonDetailedResults.csv")) |> 
   rename_with(.fn = ~str_replace(string = .,pattern = "W",replacement = "A"), .cols = starts_with("W")) |> 
@@ -72,7 +82,10 @@ summary_stats <-
   pivot_wider(names_from = name, values_from = summary_val) |> 
   ungroup() |> 
   rename(avg_win = `in`, avg_win_by = `in_by`) |> 
-  relocate(c(avg_win,avg_win_by), .after = last_col())
+  relocate(c(avg_win,avg_win_by), .after = last_col()) |> 
+  mutate(poss = FGA + TO - OR + .44 * FTA,
+    off_rating = Score / poss * 100,
+    def_rating = (Score - avg_win_by) / poss * 100)
 
 summary_stats_final <-
   read_csv(here::here("Data/MNCAATourneyDetailedResults.csv")) |> 
@@ -142,23 +155,28 @@ quad_win_helper <-
       rename_with(.fn = ~str_replace(string = .,pattern = "L",replacement = "A"), .cols = starts_with("L")) |>
       mutate(win = 0, win_by = BScore - AScore) |> 
       select(Season, DayNum, ATeamID, AScore, BTeamID, BScore, win, win_by) 
-  )  |> 
-  left_join(ranking_data |> select(TeamID, Season,rank_avg_B = rank_avg), by = c("Season", "BTeamID" = "TeamID")) |> 
-  mutate(game_of_interest_A = rank_avg_B < 30, game_of_interest_A_bad = rank_avg_B > 75) 
+  )  
+# |> 
+  # left_join(ranking_data |> select(TeamID, Season,rank_avg_B = rank_avg), by = c("Season", "BTeamID" = "TeamID")) |> 
+  # mutate(game_of_interest_A = rank_avg_B < 30, game_of_interest_A_bad = rank_avg_B > 75) 
 
 
 quad_win_tracker <-
   quad_win_helper |> 
-  count(Season, ATeamID, win, game_of_interest_A) |> 
-  filter(!is.na(game_of_interest_A)) |> 
-  filter(game_of_interest_A) |> 
+  count(Season, ATeamID, win, 
+        # game_of_interest_A
+        ) |> 
+  # filter(!is.na(game_of_interest_A)) |> 
+  # filter(game_of_interest_A) |> 
   filter(win == 1) |> 
   select(Season, TeamID = ATeamID, quad_wins = n) |> 
   full_join(
     quad_win_helper |> 
-      count(Season, BTeamID, win, game_of_interest_A_bad) |> 
-      filter(!is.na(game_of_interest_A_bad)) |> 
-      filter(game_of_interest_A_bad) |> 
+      count(Season, BTeamID, win, 
+            # game_of_interest_A_bad
+            ) |> 
+      # filter(!is.na(game_of_interest_A_bad)) |> 
+      # filter(game_of_interest_A_bad) |> 
       filter(win == 0) |> 
       select(Season, TeamID = BTeamID, quad_loss = n)
   ) |> 
@@ -186,8 +204,6 @@ conf_rank <-
   mutate(conf_record = str_c(WConf, "_", LConf)) |> 
   select(Season, conf_record, contains("conf_"))
 
-
-
 base_builder <-
   read_csv(here::here("Data/MNCAATourneyDetailedResults.csv")) |>
   select(Season,contains("Team"), contains("Score"), DayNum) |>
@@ -206,8 +222,9 @@ base_builder <-
 
 
 staging_data <-
-  ranking_data |> 
-  left_join(summary_stats, by = c("Season","TeamID")) |> 
+  # ranking_data |> 
+  # left_join(summary_stats, by = c("Season","TeamID")) |> 
+  summary_stats |> 
   distinct() |> 
   left_join(quality_win_tracker) |> 
   left_join(
@@ -233,11 +250,42 @@ model_data <-
   left_join(seeds, by = c("LTeamID" = "TeamID", "Season"), suffix = c("_A", "_B")) |>
   left_join(quad_win_tracker, by = c("WTeamID" = "TeamID", "Season")) |> 
   left_join(quad_win_tracker, by = c("LTeamID" = "TeamID", "Season"), suffix = c("_A", "_B")) |> 
+  mutate(win = factor(win, levels = c("lose", "win"))) |>  # Added this line
   group_split(Season < 2015) |>
   set_names(c("Test","Train")) |>
   map(~select(.,-`Season < 2015`))
 
-bar<- function(x)sum/length(x)
+write_rds(model_data, "Data/model_data.rds") # Added this too
 
+
+# Added the following code to produce the team summary stats and possible 
+# matchups for the 2024 tournament
+
+team_data_2024 <- seeds |> 
+  filter(Season == 2024) |> 
+  left_join(staging_data, by = c("TeamID", "Season")) |> 
+  left_join(rankings, by = c("TeamID", "Season")) |> 
+  left_join(quad_win_tracker, by = c("TeamID", "Season"))
+
+team_matchups_2024 <- expand_grid(
+  TeamID_A = team_data_2024$TeamID,
+  TeamID_B = team_data_2024$TeamID
+) |> 
+  left_join(team_data_2024, by = c("TeamID_A" = "TeamID")) |> 
+  select(-Season) |> 
+  left_join(team_data_2024, by = c("TeamID_B" = "TeamID"), suffix = c("_A", "_B")) |> 
+  filter(TeamID_A != TeamID_B) |>
+  mutate(conf_record_one = str_c(conf_A, "_", conf_B),
+         conf_record_two = str_c(conf_B, "_", conf_A)) |>
+  left_join(conf_rank, by = c("Season", "conf_record_one" = "conf_record")) |>
+  left_join(conf_rank, by = c("Season", "conf_record_two" = "conf_record"), suffix = c("_against_B", "_against_A")) |>
+  select(-c(conf_record_one,conf_record_two,conf_A,conf_B)) |>
+  mutate(across(.cols = contains("conf_"),.fns = ~replace_na(.,0))) |> 
+  left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_A" = "TeamID")) |>
+  select(-Tournament) |> 
+  left_join(read_csv(here::here("Data/2024_tourney_seeds.csv")), by = c("TeamID_B" = "TeamID"), suffix = c("_A", "_B")) |> 
+  filter(!is.na(Seed_A_A) & !is.na(Seed_B_B))
+  
+team_matchups_2024 |> write_rds("Data/team_matchups_2024.rds")
 
 
