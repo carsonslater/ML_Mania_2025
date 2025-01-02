@@ -2,6 +2,10 @@
 # Oct. 23, 2024 -----------------------------------------------------------
 # -------------------------------------------------------------------------
 
+# Run library(tidyverse) before running this script
+# If tidyverse is not installed use install.packages("tidyverse") and then
+# run library(tidyverse)
+
 # regression_formula = formula(win_by ~ rank_avg_A + rank_avg_B + last3offensive_efficiency_A + last3offensive_efficiency_B +
 #                                last3possessions_per_game_A + last3possessions_per_game_B + last3defensive_efficiency_A + last3defensive_efficiency_B +
 #                                clust_A + clust_B + avg_win_A + avg_win_B + overallfree_throw_rate_A + overallfree_throw_rate_B +
@@ -23,6 +27,65 @@ team_df <-
   pivot_longer(cols = contains("Team"), values_to = "TeamID") |> 
   distinct(Season,TeamID) |> 
   arrange(Season,TeamID)
+
+conf_tourney_results <- read_csv(here::here("Data/MRegularSeasonDetailedResults.csv")) |> 
+  select(Season, WTeamID, LTeamID, WScore, LScore, DayNum) |> 
+  left_join(
+    read_csv(here::here("Data/MTeamConferences.csv")), by = c("Season", "WTeamID" = "TeamID")
+  ) |> 
+  rename(WConf = ConfAbbrev) |> 
+  left_join(
+    read_csv(here::here("Data/MTeamConferences.csv")), by = c("Season", "LTeamID" = "TeamID")
+  ) |> 
+  rename(LConf = ConfAbbrev) |> 
+  filter(WConf == LConf) |> 
+  group_by(Season, WConf) |> 
+  arrange(desc(DayNum)) |> 
+  slice(2:3) |> 
+  ungroup() |>
+  select(Season, WTeamID, LTeamID) |> 
+  group_by(Season) |> 
+  pivot_longer(cols = contains("Team"), values_to = "TeamID") |>
+  distinct(Season, TeamID, .keep_all = T) |> 
+  select(-name) |> 
+  mutate(conf_semi = 1)
+  
+
+last_3_weeks_summary <- read_csv(here::here("Data/MRegularSeasonDetailedResults.csv")) |> 
+  group_by(Season) |>
+  filter(DayNum >= max(DayNum) - 21) |>
+  ungroup() |> 
+  rename_with(.fn = ~str_replace(string = .,pattern = "W",replacement = "A"), .cols = starts_with("W")) |> 
+  rename_with(.fn = ~str_replace(string = .,pattern = "L",replacement = "B"), .cols = starts_with("L")) |>
+  mutate(win = if_else(AScore > BScore, 1, 0), win_by = AScore - BScore) |> 
+  select(Season, DayNum, TeamID = ATeamID, AScore, Loc = ALoc, AFGM:APF, win, win_by) |> 
+  pivot_longer(cols = -c(Season,DayNum,TeamID,Loc)) |> 
+  
+  bind_rows(
+    read_csv(here::here("Data/MRegularSeasonDetailedResults.csv")) |> 
+      group_by(Season) |>
+      filter(DayNum >= max(DayNum) - 21) |>
+      ungroup() |>
+      rename_with(.fn = ~str_replace(string = .,pattern = "W",replacement = "A"), .cols = starts_with("W")) |> 
+      rename_with(.fn = ~str_replace(string = .,pattern = "L",replacement = "B"), .cols = starts_with("L")) |>
+      mutate(win = 0, win_by = BScore - AScore) |> 
+      select(Season, DayNum, TeamID = BTeamID, BScore, Loc = ALoc, BFGM:BPF, win, win_by) |>
+      mutate(Loc = case_when(Loc == "A" ~ "H",
+                             Loc == "H" ~ "A",
+                             TRUE ~ Loc)) |> 
+      pivot_longer(cols = -c(Season,DayNum,TeamID, Loc)) 
+    
+  ) |> 
+  mutate(name = str_sub(name, 2,-1)) |> 
+  group_by(Season, TeamID, name) |> 
+  summarise(summary_val = mean(value, na.rm = T)) |> 
+  pivot_wider(names_from = name, values_from = summary_val) |> 
+  ungroup() |> 
+  rename(avg_win = `in`, avg_win_by = `in_by`) |> 
+  relocate(c(avg_win,avg_win_by), .after = last_col()) |> 
+  mutate(poss = FGA + TO - OR + .44 * FTA,
+         off_rating = Score / poss * 100,
+         def_rating = (Score - avg_win_by) / poss * 100)
 
 r_of_interest <- read_csv(here::here("Data/MMasseyOrdinals_thruSeason2024_day128.csv")) |> 
   filter(SystemName %in% c("SAG","POM","MOR","WLK", "RPI"))  
@@ -148,7 +211,6 @@ quad_win_helper <-
   # left_join(ranking_data |> select(TeamID, Season,rank_avg_B = rank_avg), by = c("Season", "BTeamID" = "TeamID")) |> 
   # mutate(game_of_interest_A = rank_avg_B < 30, game_of_interest_A_bad = rank_avg_B > 75) 
 
-
 quad_win_tracker <-
   quad_win_helper |> 
   count(Season, ATeamID, win, 
@@ -191,6 +253,7 @@ conf_rank <-
   mutate(conf_loss = replace_na(conf_loss, 0)) |> 
   mutate(conf_record = str_c(WConf, "_", LConf)) |> 
   select(Season, conf_record, contains("conf_"))
+  
 
 base_builder <-
   read_csv(here::here("Data/MNCAATourneyDetailedResults.csv")) |>
@@ -214,12 +277,16 @@ staging_data <-
   # left_join(summary_stats, by = c("Season","TeamID")) |> 
   summary_stats |> 
   distinct() |> 
+  left_join(distinct(last_3_weeks_summary), by = c("Season","TeamID"), suffix = c("", "_last3w")) |> 
   left_join(quality_win_tracker) |> 
   left_join(
     read_csv(here::here("Data/MTeamConferences.csv")), by = c("Season", "TeamID")
   ) |> 
   relocate(ConfAbbrev, .after = Season) |> 
-  rename(conf = ConfAbbrev) 
+  rename(conf = ConfAbbrev) |> 
+  mutate(conf_power = ifelse(conf %in% c("acc", "big_east", "big_ten", "big_twelve", "sec"), 1, 0)) |> 
+  left_join(conf_tourney_results, by = c("Season", "TeamID")) |> 
+  mutate(conf_semi = ifelse(is.na(conf_semi), 0, 1))
 
 
 model_data <-
