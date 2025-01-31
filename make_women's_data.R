@@ -117,7 +117,20 @@ create_features <- function(team_id, result_regular, seed) {
     left_join(seed_tmp, by = "Season") %>% 
     mutate(TeamID = team_id)
   
-  return(tmp5)
+  last3weeks <- tmp4 %>% 
+    group_by(Season) %>%
+    filter(DayNum >= max(DayNum)-21) %>% 
+    summarise(
+      count_3w = n(),
+      win_count_3w = sum(win),
+      win_rate_3w = sum(win)/n(),
+      gap_avg_3w = mean(diff_score)
+    ) %>% 
+    mutate(TeamID = team_id)
+  
+  tmp6 <- left_join(tmp5, last3weeks, by = c("TeamID", "Season"))
+  
+  return(tmp6)
 }
 
 
@@ -150,14 +163,16 @@ tmp2 <- result %>%
   )
 
 features_A <- features %>% 
-  select(Season, TeamID, Seed, Rating, win_rate, gap_avg) %>% 
+  select(Season, TeamID, Seed, Rating, win_rate, gap_avg, win_rate_3w, gap_avg_3w) %>% 
   filter(is.na(Seed) == 0) %>% 
-  rename(TeamID_A = TeamID, Seed_A = Seed, Rating_A = Rating, win_rate_A = win_rate, gap_avg_A = gap_avg)
+  rename(TeamID_A = TeamID, Seed_A = Seed, Rating_A = Rating, win_rate_A = win_rate, gap_avg_A = gap_avg,
+         win_rate_3w_A = win_rate_3w, gap_avg_3w_A = gap_avg_3w)
 
 features_B <- features %>% 
-  select(Season, TeamID, Seed, Rating, win_rate, gap_avg) %>% 
+  select(Season, TeamID, Seed, Rating, win_rate, gap_avg, win_rate_3w, gap_avg_3w) %>% 
   filter(is.na(Seed) == 0) %>% 
-  rename(TeamID_B = TeamID, Seed_B = Seed, Rating_B = Rating, win_rate_B = win_rate, gap_avg_B = gap_avg)
+  rename(TeamID_B = TeamID, Seed_B = Seed, Rating_B = Rating, win_rate_B = win_rate, gap_avg_B = gap_avg,
+         win_rate_3w_B = win_rate_3w, gap_avg_3w_B = gap_avg_3w)
 
 result_merged <- bind_rows(tmp, tmp2) %>% 
   filter(Season >= 2010) %>% 
@@ -169,6 +184,8 @@ result_merged <- bind_rows(tmp, tmp2) %>%
     diff_win_rate = win_rate_A - win_rate_B,
     diff_gap_avg = gap_avg_A - gap_avg_B,
     diff_score = Score_A-Score_B,
+    diff_win_rate_3w = win_rate_3w_A - win_rate_3w_B,
+    diff_gap_avg_3w = gap_avg_3w_A - gap_avg_3w_B,
     target = ifelse(Score_A-Score_B>0, 1, 0)
   )
 
