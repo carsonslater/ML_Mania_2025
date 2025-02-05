@@ -1,3 +1,9 @@
+# Jonathan Lieb
+
+# Libraries needed 
+# tidyverse
+# tidymodels
+
 # This example shows how to use step_pca() with 
 # our glmnet example from earlier. Once again tidymodels should
 # be use before running the code below
