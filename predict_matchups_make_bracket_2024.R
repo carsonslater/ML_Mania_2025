@@ -3,15 +3,22 @@
 
 # Load the model
 glmnet_model <- read_rds("glmnet_final_res.rds")
-xgb_model_w <- read_rds("xgb_final_res_womens.rds")
+glmnet_model_w <- read_rds("glmnet_final_res_w.rds")
 
 # Load the data
 data_2024 <- read_rds("Data/team_matchups_2024.rds")
-data_2024_w <- read_rds("Data/team_matchups_2024_w.rds")
+miya_data <- read_rds("Data/evan_miya_full.rds") |> 
+  filter(season == 2024)
+data_2024 <- data_2024 |> 
+  left_join(miya_data, by = c("TeamID_A" = "TeamID")) |> 
+  left_join(miya_data, by = c("TeamID_B" = "TeamID"), suffix = c("_A", "_B"))
+
+data_2024_w <- read_rds("Data/team_matchups_2024_w.rds")  
+  mutate(target = factor(target, levels = c(0, 1), labels = c("loss", "win")))
 
 # Predict the games
 glmnet_preds <- augment(glmnet_model, new_data = data_2024)
-xgb_preds_w <- augment(xgb_model_w, new_data = data_2024_w)
+glmnet_preds_w <- augment(glmnet_model_w, new_data = data_2024_w)
 
 # This function will make a dataframe of the team locations and 
 # a dataframe of the predictions when taking a dataframe consisting
@@ -38,14 +45,14 @@ make_team_locs_preds <- function(df, mens = T){
     select(team_A = TeamID_A, team_B = TeamID_B, win_probA = .pred_win)
   }else{
     preds <- df |>
-    select(team_A = TeamID_A, team_B = TeamID_B, win_probA = .pred_W)
+    select(team_A = TeamID_A, team_B = TeamID_B, win_probA = .pred_win)
   }
   return(list(team_locs, preds))
 }
 
 # Make the team locations and predictions
 team_locs_preds <- make_team_locs_preds(glmnet_preds)
-team_locs_preds_w <- make_team_locs_preds(xgb_preds_w, mens = F)
+team_locs_preds_w <- make_team_locs_preds(glmnet_preds_w, mens = F)
 
 # Use simulate_n_brackets from simulate_n_brackets.R to simulate 1000
 # brackets using the glmnet predictions
@@ -115,27 +122,91 @@ true_bracket <- tibble(true_winner = c("W01", "W09", "W05", "W13", "W11", "W03",
 #                                   "R4W1","R4X1", "R4Y1","R4Z1","R5WX", "R5YZ","R6CH"))
 #                          
 
+
+
 all_brackets <- bind_rows(brackets, brackets_w)
 all_chalk <- bind_rows(chalk, chalk_w)
 
+all_team <- tibble(team = c("W01", "W02", "W03", "W04", "W05", "W06", "W07", "W08",
+                            "W09", "W10", "W11", "W12", "W13", "W14", "W15", "W16",
+                            "X01", "X02", "X03", "X04", "X05", "X06", "X07", "X08",
+                            "X09", "X10", "X11", "X12", "X13", "X14", "X15", "X16",
+                            "Y01", "Y02", "Y03", "Y04", "Y05", "Y06", "Y07", "Y08",
+                            "Y09", "Y10", "Y11", "Y12", "Y13", "Y14", "Y15", "Y16",
+                            "Z01", "Z02", "Z03", "Z04", "Z05", "Z06", "Z07", "Z08",
+                            "Z09", "Z10", "Z11", "Z12", "Z13", "Z14", "Z15", "Z16"))
+
+m_true <- true_bracket |> 
+  filter(Tournament =="M") |> 
+  count(true_winner, Slot) |> 
+  group_by(Slot) |> 
+  mutate(prob = n / sum(n), 
+         round = str_extract(Slot, "\\d")) |> 
+  ungroup() |>
+  select(-Slot) |> 
+  pivot_wider(names_from = round, values_from = prob, values_fill = list(prob = 0)) |> 
+  right_join(all_team, by = c("true_winner" = "team")) |>
+  replace_na(list(`1` = 0, `2` = 0, `3` = 0, `4` = 0, `5` = 0, `6` = 0))
+
+w_true <- true_bracket |> 
+  filter(Tournament =="W") |> 
+  count(true_winner, Slot) |> 
+  group_by(Slot) |> 
+  mutate(prob = n / sum(n), 
+         round = str_extract(Slot, "\\d")) |> 
+  ungroup() |>
+  select(-Slot) |> 
+  pivot_wider(names_from = round, values_from = prob, values_fill = list(prob = 0)) |> 
+  right_join(all_team, by = c("true_winner" = "team")) |>
+  replace_na(list(`1` = 0, `2` = 0, `3` = 0, `4` = 0, `5` = 0, `6` = 0))
+
 
 calculate_brier_score <- function(brackets){
-  brackets |> 
-    group_by(Tournament, Slot) |>
-    count(Team) |>
-    mutate(prob = n / sum(n)) |>
-    full_join(true_bracket, by = c("Slot", "Tournament")) |> 
-    filter(Team == true_winner) |> 
-    right_join(true_bracket, by = c("Slot", "Tournament")) |> 
-    mutate(prob = ifelse(is.na(prob), 0, prob),
-           brier = (prob - 1)^2, 
-           round = str_extract(Slot, "\\d")) |> 
-    group_by(round, Tournament) |> 
-    summarize(brier = mean(brier)) |> 
-    group_by(Tournament) |>
-    summarize(brier = mean(brier)) |> 
-    pull(brier)
+  m_brackets <- brackets |> 
+    filter(Tournament == "M")
+  w_brackets <- brackets |> 
+    filter(Tournament == "W")
+  
+  m_predicted <- m_brackets |> 
+    count(Team, Slot) |> 
+    mutate(prob = n / sum(n), 
+           round = str_extract(Slot, "\\d"), .by = Slot) |> 
+    select(Team, round, prob) |> 
+    pivot_wider(names_from = round, values_from = prob, values_fill = list(prob = 0)) |> 
+    right_join(all_team, by = c("Team" = "team")) |> 
+    replace_na(list(`1` = 0, `2` = 0, `3` = 0, `4` = 0, `5` = 0, `6` = 0))
+  
+  w_predicted <- w_brackets |>
+    count(Team, Slot) |> 
+    mutate(prob = n / sum(n), 
+           round = str_extract(Slot, "\\d"), .by = Slot) |> 
+    select(Team, round, prob) |> 
+    pivot_wider(names_from = round, values_from = prob, values_fill = list(prob = 0)) |> 
+    right_join(all_team, by = c("Team" = "team")) |> 
+    replace_na(list(`1` = 0, `2` = 0, `3` = 0, `4` = 0, `5` = 0, `6` = 0))
+  
+  m_briers <- m_predicted |>
+    left_join(m_true, by = c("Team" = "true_winner"), suffix = c("_pred", "_true")) |> 
+    mutate(brier = ((`1_pred` - `1_true`)^2 + (`2_pred` - `2_true`)^2 + 
+                      (`3_pred` - `3_true`)^2 + (`4_pred` - `4_true`)^2 + 
+                      (`5_pred` - `5_true`)^2 + (`6_pred` - `6_true`)^2) / 6) |> 
+    summarize(brier = mean(brier))
+  
+  w_briers <- w_predicted |>
+    left_join(w_true, by = c("Team" = "true_winner"), suffix = c("_pred", "_true")) |> 
+    mutate(brier = ((`1_pred` - `1_true`)^2 + (`2_pred` - `2_true`)^2 + 
+                      (`3_pred` - `3_true`)^2 + (`4_pred` - `4_true`)^2 + 
+                      (`5_pred` - `5_true`)^2 + (`6_pred` - `6_true`)^2) / 6) |> 
+    summarize(brier = mean(brier))
+  
+  return(c(m_briers$brier, w_briers$brier))
+
 }
 
+
+calculate_brier_score(brackets50)
 calculate_brier_score(all_brackets)
 calculate_brier_score(all_chalk)
+mean(calculate_brier_score(all_brackets))
+mean(calculate_brier_score(all_chalk))
+mean(calculate_brier_score(brackets50))

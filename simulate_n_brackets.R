@@ -61,13 +61,24 @@ simulate_n_brackets <- function(team_locations, all_preds, n, bracket_type = "M"
 teams <- tibble(team_id = 1:64)
 team_locations <- tibble(team_id = 1:64, loc = rep(c("W", "X", "Y", "Z"), each = 16), 
                          num = rep(c(1, 16, 8, 9, 5, 12, 4, 13, 6, 11, 3, 14, 7, 10, 2, 15), 4)) |> 
-  mutate(loc = paste0(loc, num)) |> 
-  select(-num)
+  mutate(loc = paste0(loc, ifelse(num < 10, paste0("0", num), num)))
+
 
 all_matchups <- expand.grid(team_A = teams$team_id,team_B = teams$team_id) |> 
   filter(team_A != team_B)
 
 all_preds <- all_matchups |> 
-  mutate(win_probA = runif(4032))
+  left_join(team_locations, by = c("team_A" = "team_id")) |>
+  left_join(team_locations, by = c("team_B" = "team_id"), suffix = c("_A", "_B")) |>
+  mutate(win_probA = case_when(
+    num_A < num_B ~ 1,
+    num_A > num_B ~ 0,
+    str_extract(loc_A, "[A-Z]") < str_extract(loc_B, "[A-Z]") ~ 1,
+    TRUE ~ 0
+  )) |> 
+  select(team_A, team_B, win_probA)
 
-brackets50 <- simulate_n_brackets(team_locations, all_preds, 50)
+brackets50 <- simulate_n_brackets(team_locations |> select(-num), all_preds, 1)
+brackets50_w <- simulate_n_brackets(team_locations |> select(-num), all_preds, 1, bracket_type = "W")
+
+brackets50 <- bind_rows(brackets50, brackets50_w)

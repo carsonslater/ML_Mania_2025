@@ -1,7 +1,8 @@
 # Create Women's Data to Train Model
 # Load tidyverse and progress before using
 
-
+library(tidyverse)
+library(progress)
 # Create features ---------------------------------------------------------
 # from https://www.kaggle.com/code/flat831/create-feature-womens
 
@@ -206,6 +207,8 @@ womens_team_matchups_2024 <- expand_grid(TeamID_A = womens_teams_2024$TeamID,
          diff_rating = Rating_A - Rating_B,
          diff_win_rate = win_rate_A - win_rate_B,
          diff_gap_avg = gap_avg_A - gap_avg_B,
+         diff_win_rate_3w = win_rate_3w_A - win_rate_3w_B,
+         diff_gap_avg_3w = gap_avg_3w_A - gap_avg_3w_B,
          WLoc = case_when(Seed_A == 1 & Seed_B %in% c("8", "9", "16") ~ "H",
                           Seed_B == 1 & Seed_A %in% c("8", "9", "16") ~ "A", 
                           T ~ "N")) |> 

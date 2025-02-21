@@ -1,25 +1,31 @@
-# Jonathan Lieb
+# Logistic regression model with Tidymodels Example (GLMNET)
 
-# Libraries needed 
-# tidyverse
-# tidymodels
-# library(tidyverse)
-# library(tidymodels)
+# Please note that tidymodels and tidyverse should be loaded
+# before running the code below
+library(tidymodels)
+library(tidyverse)
 
-# This example shows how to use step_pca() with 
-# our glmnet example from earlier. Once again tidymodels should
-# be use before running the code below
+# Load data
+model_data <- read_csv("train_womens.csv")
+model_data_1_tibble <- model_data |> 
+  mutate(gid = pmap_chr(list(TeamID_A, TeamID_B, Season), ~ str_c(sort(c(...)), collapse = "_"))) |> 
+  mutate(target = factor(target, levels = c(0, 1), labels = c("loss", "win")))
 
-model_data <- read_rds("Data/model_data.rds")
-model_data_1_tibble <- bind_rows(model_data$Train, model_data$Test)
+model_data_1_tibble |> 
+  group_by(gid) |>
+  summarise(n = n()) |>
+  count(n < 2)
+
+glimpse(model_data_1_tibble)
 
 set.seed(77)
-data_split <- initial_split(model_data_1_tibble, prop = 0.75, strata = win)
+data_split <- group_initial_split(model_data_1_tibble, prop = 0.75, group = gid)
 test_data <- testing(data_split)
 train_data <- training(data_split)
 
 # Create a cross-validation folds
-cv_folds <- vfold_cv(train_data, v = 10, strata = win)
+cv_folds <- group_vfold_cv(train_data, v = 4, group = gid)
+
 
 # Create a metric set
 metrics <- metric_set(brier_class, accuracy, mn_log_loss)
@@ -29,20 +35,15 @@ ctrl <- control_resamples(save_pred = TRUE)
 ctrl_bayes <- control_bayes(verbose_iter = TRUE)
 
 # Create a recipe
-glmnet_rec <- recipe(win ~ quad_wins_A + quad_wins_B + Seed_A + Seed_B + 
-                       Stl_A + TO_A + avg_win_A + 
-                       avg_win_by_A + Stl_B + TO_B +
-                       avg_win_B + avg_win_by_B + MOR_A + 
-                       WLK_A + quad_loss_A + MOR_B + WLK_B +
-                       quad_loss_B + off_rating_A + off_rating_B +
-                       def_rating_A + def_rating_B+ off_rating_last3w_A +
-                       off_rating_last3w_B + def_rating_last3w_A +
-                       def_rating_last3w_B + conf_power_A + conf_power_B+
-                       conf_semi_A + conf_semi_B,
+glmnet_rec <- recipe(target ~ diff_seed + diff_rating + 
+                       diff_win_rate + diff_gap_avg +
+                       diff_win_rate_3w + diff_gap_avg_3w,
                      data = train_data) |> 
-  step_center(all_predictors()) |>
-  step_scale(all_predictors()) |>
-  step_pca(all_predictors(), threshold = 0.875)
+  # step_num2factor(all_integer_predictors(), levels = c("no", "yes")) |> 
+  step_normalize(all_numeric_predictors())
+
+# Old commented out produced .733 accuracy, .188 brier, .556 log loss
+# New code produced .746 accuracy, .180 brier, .536 log loss
 
 # Create Model Specification
 glmnet_spec <- logistic_reg(penalty = tune(), mixture = tune()) |> 
@@ -63,7 +64,7 @@ glmnet_init_res <-
   glmnet_wf |> 
   tune_grid(
     resamples = cv_folds,
-    grid = nrow(glmnet_params) + 2,
+    grid = nrow(glmnet_params) + 8,
     param_info = glmnet_params,
     metrics = metrics
   )
@@ -90,6 +91,7 @@ autoplot(glmnet_bayes_res, metric = "mn_log_loss")
 autoplot(glmnet_bayes_res, metric = "accuracy")
 autoplot(glmnet_bayes_res, metric = "brier_class")
 
+
 # Select Best parameters
 glmnet_best_params <- select_best(glmnet_bayes_res, metric = "brier_class")
 
@@ -106,13 +108,22 @@ glmnet_final_res <- glmnet_final_wflow |>
 glmnet_final_res |> 
   collect_metrics()
 
+# Best so far .816 accuracy, .134 brier, .419 log loss
+
 glmnet_final_res |> 
   collect_predictions() |> 
-  conf_mat(truth = win, estimate = .pred_class)
+  conf_mat(truth = target, estimate = .pred_class)
 
+# Check coefficients
+glmnet_final_res |> 
+  extract_fit_parsnip() |> 
+  tidy()
+
+# Save the final workflow
 library(butcher)
 cleaned_glmnet_final_res <- glmnet_final_wflow |> 
   fit(data = train_data) |> 
   butcher()
 
-write_rds(cleaned_glmnet_final_res, "Data/mens_glmnet_pca_final_res.rds")
+write_rds(cleaned_glmnet_final_res, "glmnet_final_res_w.rds")
+
